@@ -1,37 +1,42 @@
 
-// #define BLYNK_TEMPLATE_ID "TMPL6sMWFEFEk"
+// Smart Energy Consumption Monitoring System
+// Monitors current, voltage, and power using sensors, displays data on an OLED,
+// sends data to Blynk for remote monitoring, and stores it in Firebase.
+
+// Blynk template and authentication details
 #define BLYNK_TEMPLATE_ID "TMPL6neA4lOpu"
 #define BLYNK_TEMPLATE_NAME "SmartEnergyConsumption"
 #define BLYNK_DEVICE_NAME "SmartEnergyConsumption"
 
-#include <Arduino.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
-#include <WiFiUdp.h>
-#include <WiFi.h>
-#include <NTPClient.h>
-#include <cmath>
-#include <BlynkSimpleEsp32.h>
-#include <FirebaseESP32.h>
-#include <iostream> 
-#include <iomanip> 
-#include <sstream> 
-#include <ctime>
+// Required libraries
+#include <Arduino.h>              // Core Arduino library
+#include <Wire.h>                 // I2C communication for OLED
+#include <Adafruit_GFX.h>         // Graphics library for OLED
+#include <Adafruit_SSD1306.h>     // OLED display driver
+#include <WiFiUdp.h>              // UDP for NTP time sync
+#include <WiFi.h>                 // WiFi connectivity
+#include <NTPClient.h>            // Network Time Protocol client
+#include <cmath>                  // Math functions for RMS calculations
+#include <BlynkSimpleEsp32.h>     // Blynk library for IoT integration
+#include <FirebaseESP32.h>        // Firebase library for cloud storage
+#include <iostream>               // Standard I/O (for Serial)
+#include <iomanip>                // Formatting for timestamps
+#include <sstream>                // String stream for formatting
+#include <ctime>                  // Time functions for timestamps
 
 // OLED setup
-#define SCREEN_WIDTH 128
-#define SCREEN_HEIGHT 64
-#define OLED_RESET -1
-#define SCREEN_ADDRESS 0x3D
+#define SCREEN_WIDTH 128        // OLED display width in pixels
+#define SCREEN_HEIGHT 64      // OLED display height in pixels
+#define OLED_RESET -1           // Reset pin (-1 if not used)
+#define SCREEN_ADDRESS 0x3D      // I2C address of the OLED display
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 // Constants
-#define V_REF 3.3
-#define ADC_RESOLUTION 4095.0
+#define V_REF 3.3 // Reference voltage for ADC (3.3V for ESP32)
+#define ADC_RESOLUTION 4095.0 // 12-bit ADC resolution
 
-#define CURRENT_CALIBRATION 5.0
-#define VOLTAGE_DIVIDER_RATIO 5.56
+#define CURRENT_CALIBRATION 5.0 // Calibration factor for current sensor
+#define VOLTAGE_DIVIDER_RATIO 5.56  // Voltage divider ratio for voltage sensor
 
 #define FIREBASE_DATABASE_URL "smartenergyconsumption-3dc05-default-rtdb.asia-southeast1.firebasedatabase.app"
 #define FIREBASE_API_KEY      "AIzaSyDGW5CICbfSdJkM29ZHWjkIQDPjyDeplqk"
@@ -57,11 +62,13 @@ void setup() {
   Serial.begin(115200);
   pinMode(relayPin, OUTPUT);
 
+  // Initialize OLED display
   if (!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
     Serial.println("SSD1306 OLED allocation failed");
     while (true);
   }
 
+  // Display startup message on OLED
   display.clearDisplay();
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
@@ -69,17 +76,20 @@ void setup() {
   display.println("Smart Energy Monitor");
   display.display();
   delay(2000);
-
+  // Connect to WiFi
   WiFi.begin("IOT", "12345678");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
-    Serial.print(".");
+    Serial.print("."); // Print dots until connected
   }
   Serial.println("\nWiFi connected.");
-  timeClient.begin();
-  Blynk.begin(auth, "IOT", "12345678"); 
 
-  fbConfig.database_url = FIREBASE_DATABASE_URL;  // full URL, no trailing slash
+  timeClient.begin(); // Start NTP client
+
+  Blynk.begin(auth, "IOT", "12345678");  // Blynk authentication
+
+  // Initialize Firebase
+  fbConfig.database_url = FIREBASE_DATABASE_URL;
   fbConfig.api_key      = FIREBASE_API_KEY;
   fbConfig.signer.tokens.legacy_token = FIREBASE_DB_SECRET;
   Firebase.begin(&fbConfig, nullptr);
@@ -110,7 +120,7 @@ void storeDataToFirebase(float current, float voltage, float power) {
   }
 }
 
-// Only current needs RMS
+// Read and Calculate RMS current in Amps
 float readCurrentRMS() {
   const int samples = 1000;
   float sum = 0;
@@ -131,22 +141,21 @@ float readCurrentRMS() {
 }
 
 // Voltage is direct-read with scaling (from divider)
-// RMS voltage from AC input via divider
 float readVoltageRMS() {
   int voltageRawValue = analogRead(voltagePin); 
   float voltageValue = voltageRawValue * (V_REF / ADC_RESOLUTION) * VOLTAGE_DIVIDER_RATIO;
   return voltageValue;
 }
-
+// Handles Blynk virtual pin V4 to control relay
 BLYNK_WRITE(V4) {
-  int buttonState = param.asInt();
-  Serial.print("Blynk V4 = ");
-  Serial.println(buttonState);
+  int buttonState = param.asInt(); // Get the state of the button from Blynk app
+  Serial.print("Blynk V4 = "); 
+  Serial.println(buttonState);  
   if (buttonState == 0) {
-    digitalWrite(relayPin, LOW);
+    digitalWrite(relayPin, LOW); // Turn off relay
     Serial.println("Relay OFF");
   } else {
-    digitalWrite(relayPin, HIGH);
+    digitalWrite(relayPin, HIGH);   // Turn on relay
     Serial.println("Relay ON");
   }
 }
@@ -167,7 +176,8 @@ void loop() {
   Serial.print(" V | Power: ");
   Serial.print(power, 2);
   Serial.println(" W");
-   
+  
+  // Blynk Notification for high voltage
   if (voltage > 18.0 && !notificationSent) { 
     Serial.println("High voltage detected!"); 
     Blynk.logEvent("high_voltage", "Alert! Critical Voltage level"); 
@@ -176,8 +186,9 @@ void loop() {
     notificationSent = false; 
   }
 
-
-  storeDataToFirebase(current, voltage, power); 
+  // Store data to Firebase
+  storeDataToFirebase(current, voltage, power);
+  // Send data to Blynk 
   Blynk.virtualWrite(V1, current);
   Blynk.virtualWrite(V2, voltage);
   Blynk.virtualWrite(V3, power);
@@ -189,20 +200,22 @@ void loop() {
   display.setTextSize(1);
   display.println("Smart Energy Monitor");
 
+  // Display current
   display.print("Current: ");
   display.print(current, 2);
   display.println(" A");
 
+  // Display voltage
   display.print("Voltage: ");
   display.print(voltage, 2);
   display.println(" V");
 
+  // Display power
   display.print("Power: ");
   display.print(power, 2);
   display.println(" W");
 
   display.display();
-  Blynk.run();
-  delay(3000);
-
+  Blynk.run(); // Run Blynk event loop
+  delay(3000); // Update every 3 seconds
 }

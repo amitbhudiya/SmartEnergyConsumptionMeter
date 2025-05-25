@@ -14,6 +14,7 @@ records = []
 # Iterate through each timestamped entry to retrieve current, power, and voltage
 for timestamp, values in smart_energy_entries.items():
     record = {
+        'timestamp': timestamp,
         'current': values.get('current'),
         'power': values.get('power'),
         'voltage': values.get('voltage')
