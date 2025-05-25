@@ -1,0 +1,1 @@
+this is project how to setup hardware and software
